@@ -1,0 +1,5 @@
+role_id:
+1 -> start
+2 -> regular hold
+3 -> finish
+4 -> foot only

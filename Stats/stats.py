@@ -1,5 +1,6 @@
 import math
 
+# Spits out a bunch of info / stats for the tension board climbs SQLite Database
 def output_stats(reader):
 
     print('Total Boulders: ', reader.db.execute('SELECT COUNT(uuid) FROM climbs LIMIT 1').fetchone()[0])
@@ -61,16 +62,17 @@ def output_stats(reader):
         v_grade = 'V' + str(x)
         climbs = reader.get_climbs_of_grade(v_grade)
         grade = reader.get_grade(v_grade)
-        ascents = reader.db.execute('SELECT SUM(ascensionist_count) FROM climb_stats WHERE difficulty_average BETWEEN ? AND ? LIMIT 1', (grade[0],grade[-1])).fetchone()[0]
+        ascents = reader.db.execute('SELECT SUM(ascensionist_count) FROM climb_stats WHERE difficulty_average BETWEEN ? AND ? LIMIT 1', (grade[0], grade[-1])).fetchone()[0]
         print('{}: Boulders Count: {}, Ascents: {}'.format(v_grade, len(climbs), ascents))
 
-def wilson_bound(row, lower=True, confidence=0.95):
+
+# https://www.evanmiller.org/how-not-to-sort-by-average-rating.html
+def wilson_bound(row, lower=True):
     n = row['ascensionist_count']
     pos = row['quality_average'] / 3.0 * n
 
     if not lower:
         pos = n - pos
-
     if n == 0:
         return 0
     z = 1.96
@@ -83,6 +85,7 @@ def wilson_bound(row, lower=True, confidence=0.95):
 
     return ( base - ci ) / (1 + z * z / n)
 
+# https://math.stackexchange.com/questions/41459/how-can-i-calculate-most-popular-more-accurately/41513#41513
 def bayesian_rating(row, max_ratings, global_average_rating):
     num_ratings = row['ascensionist_count']
     average_rating = row['quality_average']

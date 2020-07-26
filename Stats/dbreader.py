@@ -1,8 +1,8 @@
 import sqlite3, json, sys, atexit
 import stats
 
-ENABLE_DEBUG_LOGGING = False
-
+# Implements a parser for the SQLite database for the Tension Board app
+# Provides helper and various utiltiy functions
 class DBReader:
     def __init__(self):
         self.db = sqlite3.connect(r'..\Data\db\f\db-105.sqlite3')
@@ -18,7 +18,7 @@ class DBReader:
     def close(self):
         self.db.close()
 
-    def get_grade_row(self, grade : str) -> list:
+    def get_grade_row(self, grade: str) -> list:
         command = '''
             SELECT difficulty, french_name, yds_name, verm_name
             FROM difficulty_grades 
@@ -27,62 +27,116 @@ class DBReader:
             yds_name=? COLLATE NOCASE or
             difficulty=? COLLATE NOCASE
         '''
-        grade_results = self.db.execute(command, (grade,)*4).fetchall()
-        if ENABLE_DEBUG_LOGGING:
-            [print('Grade Found: {}'.format(x)) for x in grade_results]
-        return grade_results
+        return self.db.execute(command, (grade,)*4).fetchall()
 
-    def get_grade(self, grade : str) -> list:
+    def get_grade(self, grade: str) -> list:
         return [x[0] for x in self.get_grade_row(grade)]
 
-    def get_v_grade(self, grade : str) -> list:
+    def get_v_grade(self, grade: str) -> list:
         return self.get_grade_row(grade)[0]['verm_name']
 
-    def get_climbs_of_grade(self, grade : list, min_rating=0.0):
+    def get_climbs_of_grade(self, grade: list, min_rating=0.0):
         command = '''
-            SELECT name 
+            SELECT * 
             FROM climbs
             INNER JOIN climb_stats on climb_stats.climb_uuid = climbs.uuid
             WHERE climb_stats.difficulty_average BETWEEN ? AND ? 
             AND climb_stats.quality_average >= ?
             ORDER BY climb_stats.quality_average
-        '''         
-        grade = self.get_grade(grade)
-        climbs = self.db.execute(command, (grade[0], grade[-1], min_rating)).fetchall()
+        '''
+        return self.db.execute(command, (grade[0], grade[-1], min_rating)).fetchall()
 
-        if ENABLE_DEBUG_LOGGING:
-            print('{} climbs found at grade {}'.format(len(climbs), '{} to {}'.format(grade[0], grade[-1]) if len(grade) > 1 else str(grade[0])))
-        return climbs
+    def get_climb_by_name(self, name: str):
+        return self.db.execute('SELECT * FROM climbs WHERE name=?', (name,)).fetchone()
 
     def get_climb_row_info(self, climb):
         return '{}, Grade: {}, Ascents: {}, Setter: {}, FA: {}, Rating: {:.1f}'.format(
-            climb['name'], 
-            self.get_v_grade(int(climb['difficulty_average'])), 
-            climb['ascensionist_count'], 
-            climb['setter_username'], 
+            climb['name'],
+            self.get_v_grade(int(climb['difficulty_average'])),
+            climb['ascensionist_count'],
+            climb['setter_username'],
             self.db.execute('SELECT fa_username from climb_stats WHERE climb_uuid=?', (climb['uuid'],)).fetchone()[0],
             climb['quality_average'])
 
-    def export_climbs(self, name : str, grade : list, rating=None):
-        climbs = self.get_climbs_of_grade(grade,rating)
-        self.export_json(name, climbs)
+    def export_climbs(self, name: str, climbs: list):
+        climb_data = []
+        for climb in climbs:
+            data = self.db.execute('SELECT placement_id, role_id from climbs_placements where climb_uuid=?', (climb['uuid'],)).fetchall()
+            new_entry = {}
+            new_entry['Name'] = climb['name']
+            new_entry['Holds'] = [x[0] for x in data]
+            new_entry['Roles'] = [x[1] for x in data]
+            climb_data.append(new_entry)
 
-    def export_json(self, name : str, data : list):
+        self.export_json(name, climb_data)
+
+    def export_json(self, name: str, data: list):
         path = name + '.json' if not name.endswith('.json') else ''
         with open(path, 'w') as file:
-            json.dump(data, file, indent=4, sort_keys=True)
+            json.dump(data, file, indent=4)
+        print(f'{path} saved successfully')
 
     def output_stats(self):
         stats.output_stats(self)
 
 
-def main(grade='v7'):
-    with DBReader() as reader:
-        #reader.export_climbs('climbs_' + grade, reader.get_grade_from_string(grade))
-        reader.output_stats()
+# Split args from a single raw string into a list of args
+# # (quoted args are kept together / as one arg, otherwise we split on space)
+def split_args(args_raw):
+    args = []
+    arg = ''
+    quote = False
 
+    for c in args_raw:
+        if c == '"':
+            if quote:
+                args.append(arg)
+                arg = ''
+            quote = not quote
+        elif not quote and c == ' ':
+            if len(arg) > 0:
+                args.append(arg)
+                arg = ''
+        else:
+            arg += c
 
-if __name__ == '__main__':
-    main()
-else:
-    main(sys.argv)
+    if len(arg) > 0:
+        args.append(arg)
+    return args
+
+# Try to perform a command from an input
+def try_command(commands, command):
+    args_start = command.find(' ')
+    args_raw = command[args_start+1:]
+    command = command[:args_start]
+
+    if command.lower() in commands:
+        try:
+            commands[command](*split_args(args_raw))
+        except TypeError:
+            print('Invalid arguments')
+        except Exception as e:
+            print(e)
+    else:
+        print('Invalid command')
+
+# Create the reader object (and auto dispose of it, which closes the SQLite DB connection)
+with DBReader() as reader:
+
+    # All possible commands - dictionary mapped to a lambda that performs the action
+    COMMANDS = {
+        'help': lambda: print('Commands: {}'.format(', '.join(COMMANDS.keys()))),
+        'v_grade': lambda grade: print(reader.get_v_grade(grade)),
+        'output_stats': reader.output_stats,
+        'export_climb': lambda climb: reader.export_climbs(climb, [reader.get_climb_by_name(climb)]),
+        'export_climbs': lambda grade: reader.export_climbs('climbs_' + grade, reader.get_climbs_of_grade(reader.get_grade(grade))),
+        'export_all_climbs': lambda: reader.export_climbs('climbs_all', reader.get_climbs_of_grade([0, 999])),
+        'export_all_climbs_split': lambda: [reader.export_climbs(f'climbs_v{x}', reader.get_climbs_of_grade(reader.get_grade(f'v{x}'))) for x in range(0, 17)],
+        'quit': quit
+    }
+    
+    if __name__ == '__main__':
+        while True:
+            try_command(COMMANDS, input())
+        else:
+            try_command(COMMANDS, sys.argv)

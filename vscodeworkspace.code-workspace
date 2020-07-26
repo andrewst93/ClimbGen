@@ -7,7 +7,11 @@
 			"path": "Renderer"
 		}
 	],
-	"settings": {},
+	"settings": { 
+		"python.linting.pylintEnabled": true,
+		"python.linting.enabled": true,
+		"python.linting.pylintArgs": ["--extension-pkg-whitelist=PyQt5"]
+	},
 	"launch": {
 		"version": "0.2.0",
 		"configurations": [

@@ -39,7 +39,7 @@ class DBReader:
         command = '''
             SELECT * 
             FROM climbs
-            INNER JOIN climb_stats on climb_stats.climb_uuid = climbs.uuid
+            INNER JOIN climb_stats on climb_stats.climb_uuid=climbs.uuid
             WHERE climb_stats.difficulty_average BETWEEN ? AND ? 
             AND climb_stats.quality_average >= ?
             ORDER BY climb_stats.quality_average
@@ -62,16 +62,28 @@ class DBReader:
         climb_data = []
         for climb in climbs:
             data = self.db.execute('SELECT placement_id, role_id from climbs_placements where climb_uuid=?', (climb['uuid'],)).fetchall()
-            new_entry = {}
-            new_entry['Name'] = climb['name']
-            new_entry['Holds'] = [x[0] for x in data]
-            new_entry['Roles'] = [x[1] for x in data]
-            climb_data.append(new_entry)
-
+            climb_data.append({
+                'Name': climb['name'],
+                'Holds': [x[0] for x in data],
+                'Roles': [x[0] for x in data]
+            })
         self.export_json(name, climb_data)
 
+    def export_holds_data(self):
+        holes_data = self.db.execute('SELECT * from placements INNER JOIN holes on hole_id=holes.id').fetchall()
+        data = []
+        for row in holes_data:
+            data.append({
+                'Id': row['hold_id'],
+                'Name': row['name'],
+                'Coord X': row['x'],
+                'Coord Y': row['y'],
+                'Mirror Id': row['mirrored_hole_id']
+            })
+        self.export_json('holds_data.json', data)
+
     def export_json(self, name: str, data: list):
-        path = name + '.json' if not name.endswith('.json') else ''
+        path = name + '.json' if not name.endswith('.json') else name
         with open(path, 'w') as file:
             json.dump(data, file, indent=4)
         print(f'{path} saved successfully')
@@ -107,8 +119,8 @@ def split_args(args_raw):
 # Try to perform a command from an input
 def try_command(commands, command):
     args_start = command.find(' ')
-    args_raw = command[args_start+1:]
-    command = command[:args_start]
+    args_raw = '' if args_start == -1 else command[args_start+1:]
+    command = command if args_start == -1 else command[:args_start]
 
     if command.lower() in commands:
         try:
@@ -132,11 +144,12 @@ with DBReader() as reader:
         'export_climbs': lambda grade: reader.export_climbs('climbs_' + grade, reader.get_climbs_of_grade(reader.get_grade(grade))),
         'export_all_climbs': lambda: reader.export_climbs('climbs_all', reader.get_climbs_of_grade([0, 999])),
         'export_all_climbs_split': lambda: [reader.export_climbs(f'climbs_v{x}', reader.get_climbs_of_grade(reader.get_grade(f'v{x}'))) for x in range(0, 17)],
+        'export_holds_data': reader.export_holds_data,
         'quit': quit
     }
     
     if __name__ == '__main__':
         while True:
             try_command(COMMANDS, input())
-        else:
-            try_command(COMMANDS, sys.argv)
+    else:
+        try_command(COMMANDS, ' '.join(sys.argv))

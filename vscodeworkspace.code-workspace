@@ -10,7 +10,8 @@
 	"settings": { 
 		"python.linting.pylintEnabled": true,
 		"python.linting.enabled": true,
-		"python.linting.pylintArgs": ["--extension-pkg-whitelist=PyQt5"]
+		"python.linting.pylintArgs": ["--extension-pkg-whitelist=PyQt5"],
+		"python.linting.pycodestyleArgs": ["--max-line-length=200" ]
 	},
 	"launch": {
 		"version": "0.2.0",

@@ -1,4 +1,4 @@
-import sys, json, math
+import sys, json, math, os
 
 from PyQt5.QtWidgets import *
 from PyQt5.QtGui import *
@@ -52,7 +52,7 @@ class Background(QLabel):
         for highlight in self.highlights:
             painter.setPen(self.pens[highlight[2]])
             pos = self.get_corrected_position(highlight[0], highlight[1])
-            painter.drawEllipse(pos.x() - HIGHLIGHT_RADIUS / 2.0, pos.y() - HIGHLIGHT_RADIUS / 2.0, HIGHLIGHT_RADIUS, HIGHLIGHT_RADIUS)
+            painter.drawEllipse(int(pos.x() - HIGHLIGHT_RADIUS / 2.0), int(pos.y() - HIGHLIGHT_RADIUS / 2.0), HIGHLIGHT_RADIUS, HIGHLIGHT_RADIUS)
 
     # On-click handler for modifying the climb
     def eventFilter(self, obj, event):
@@ -81,10 +81,10 @@ class Background(QLabel):
                     # Re-paint
                     self.update()
                     return True
-             
+
         return False
     
-
+# Main UI display window
 class ClimbDisplay(QMainWindow):
     def __init__(self, path: str):
         super(ClimbDisplay, self).__init__()
@@ -92,6 +92,7 @@ class ClimbDisplay(QMainWindow):
         self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self.setFixedSize(748, 1248)
         self.layout = QStackedLayout()
+        self.ctrl_down = False
 
         self.holds_data = []
         with open('holds_data.json', 'r') as file:
@@ -121,9 +122,37 @@ class ClimbDisplay(QMainWindow):
                 hold_data = self.holds_data[hold-1]
                 self.background.add_highlight(hold_data['Coord X'], hold_data['Coord Y'], role - 1)
 
-    def save_climb(self, path: str):
-        # TO DO
-        pass
+    # Saves a climb from the stored highlights data in the background into a .json file
+    def save_climb(self):
+        root_path = os.path.dirname(os.path.abspath(__file__))
+        output = QFileDialog.getSaveFileName(self, 'Save file', root_path + '/Routes/', "Json files (*.json)")
+
+        if output[0] != "":
+            with open(output[0], 'w') as file:
+                holds = []
+                roles = []
+                for x in self.background.highlights:
+                    for y in self.holds_data:
+                        if x[0] == y['Coord X'] and x[1] == y['Coord Y']:
+                            holds.append(y['Id'])
+                            break
+                    roles.append(x[2] + 1)
+
+                json.dump([{
+                    "Name": output[0][output[0].rfind('/') + 1: output[0].rfind('.')],
+                    "Holds": holds,
+                    "Roles": roles
+                }], file, indent=4)
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key_Control:
+            self.ctrl_down = True
+        elif event.key() == Qt.Key_S and self.ctrl_down:
+            self.save_climb()
+
+    def keyReleaseEvent(self, event):
+        if event.key() == Qt.Key_Control:
+            self.ctrl_down = False
 
 
 app = QApplication([])
